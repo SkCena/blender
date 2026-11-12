@@ -11,11 +11,11 @@ plugins {
 }
 
 android {
-    namespace = 'org.blender.blender'
+    namespace = 'com.skcena.blender'
     compileSdkVersion = 36
 
     defaultConfig {
-        applicationId = 'org.blender.blender'
+        applicationId = 'com.skcena.blender'
 
         // Passed by the `gradle_assemble` CMake target defined in platform_android_gradle.cmake.
         // TODO: Could also be baked in the gradle.properties file instead of being passed on invocation.

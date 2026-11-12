@@ -16,12 +16,12 @@ def blenderConfig = project.findProperty('blenderConfig') ?: 'full'
 def stageDir = "${rootDir}/../../../../blender_build_android/android_apk_stage_${blenderConfig}"
 
 android {
-  namespace 'org.blender.blender'
+  namespace 'com.skcena.blender'
   compileSdk 35
   ndkVersion '28.2.13676358'
 
   defaultConfig {
-    applicationId 'org.blender.blender'
+    applicationId 'com.skcena.blender'
     minSdk 31
     targetSdk 34
     versionCode 1

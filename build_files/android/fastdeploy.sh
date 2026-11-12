@@ -58,6 +58,6 @@ fi
 
 echo "=== install + launch ==="
 "$ADB" install -r "$OUT"
-"$ADB" shell am force-stop org.blender.blender
-"$ADB" shell am start -n org.blender.blender/.BlenderActivity
+"$ADB" shell am force-stop com.skcena.blender
+"$ADB" shell am start -n com.skcena.blender/.BlenderActivity
 echo "=== deployed ($CONFIG) ==="

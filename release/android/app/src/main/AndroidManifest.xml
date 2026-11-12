@@ -28,7 +28,7 @@
                  android:enableOnBackInvokedCallback="false"
                  android:hardwareAccelerated="true">
 
-        <activity android:name="org.blender.blender.BlenderActivity"
+        <activity android:name="com.skcena.blender.BlenderActivity"
                   android:label="@string/app_name"
                   android:alwaysRetainTaskState="true"
                   android:launchMode="singleInstance"

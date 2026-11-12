@@ -367,8 +367,8 @@ extension's declared license as it packs it.
 **adb:**
 ```bash
 adb install -r ../blender_build_android/android_apk_stage_full/blender-full.apk
-adb shell am start -n org.blender.blender/.BlenderActivity
-adb logcat --pid=$(adb shell pidof org.blender.blender)
+adb shell am start -n com.skcena.blender/.BlenderActivity
+adb logcat --pid=$(adb shell pidof com.skcena.blender)
 ```
 
 **Android Studio (Run/Debug):** run `package.sh` once (to stage libs+assets),
@@ -419,7 +419,7 @@ build_files/android/build.py --disable-turnip
 ```
 
 The driver itself is not shipped: place a Turnip build at
-`/data/data/org.blender.blender/files/turnip/vulkan.ad07xx.so`. The
+`/data/data/com.skcena.blender/files/turnip/vulkan.ad07xx.so`. The
 `libadrenotools` hooks are bundled by `package.sh` automatically.
 
 Status on Adreno 642L (as of Aug 2026): loads and renders correctly, and passes

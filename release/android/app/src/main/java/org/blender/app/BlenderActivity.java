@@ -1,4 +1,4 @@
-package org.blender.blender;
+package com.skcena.blender;
 
 import org.libsdl.app.SDLActivity;
 
@@ -20,7 +20,7 @@ public class BlenderActivity extends SDLActivity {
         // Utility hook to pass command-line start-up arguments via ADB.
 
         // Usage example:
-        //   adb shell am start -n org.blender.blender/.BlenderActivity --es args '"--debug-gpu --log ghost.*,gpu.* --log-level debug"'
+        //   adb shell am start -n com.skcena.blender/.BlenderActivity --es args '"--debug-gpu --log ghost.*,gpu.* --log-level debug"'
 
         // NOTE: naively whitespace-split, quoting (as in --python-expr "something space something") is not supported.
         String extra = getIntent().getStringExtra("args");

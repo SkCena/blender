@@ -30,7 +30,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 BUILD_BASE = REPO_ROOT.parent / "blender_build_android"
 
-PACKAGE = "org.blender.blender"
+PACKAGE = "com.skcena.blender"
 ACTIVITY = f"{PACKAGE}/.BlenderActivity"
 
 # Pinned so a validation run is reproducible; bump deliberately.

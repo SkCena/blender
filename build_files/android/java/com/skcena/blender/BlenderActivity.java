@@ -2,7 +2,7 @@
  *
  * SPDX-License-Identifier: GPL-2.0-or-later */
 
-package org.blender.blender;
+package com.skcena.blender;
 
 import android.app.NativeActivity;
 import android.content.Context;
