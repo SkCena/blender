@@ -1,4 +1,4 @@
-# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.1.1
+# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.2.0
 # N-panel "AI Chat": type a prompt, the panel calls an OpenAI-compatible API
 # (pure stdlib urllib — no requests, no pip), gets back structured ops, and
 # applies them through ai_bridge's command dispatcher (same code the socket
@@ -17,17 +17,27 @@
 #      the user taps Apply (or turns dry-run off and taps Send).
 #   5. An undo checkpoint (bpy.ops.ed.undo_push) is made before any applied batch.
 #   6. Ops are validated before applying (unknown op / missing object /
-#      disallowed code = plan error).
+#      disallowed code / HOLLOW plan with empty params = plan error).
+#      v1.2.0: a plan whose ops carry no usable params is BLOCKED at dry-run
+#      instead of "applying" nothing (seen on the phone 2026-11-13: the model
+#      returned create_object({}) etc., Apply reported "Applied 4 ops", and
+#      the scene gained only one invisible overlapping default cube).
 #   7. The API key lives in Add-on Preferences as PLAINTEXT in userpref.blend
 #      (see the preference description — use a revokable key).
+#   8. v1.2.0: Apply reports honestly — "Applied X of N ops" plus the step
+#      it stopped at, in history and in the status bar. The old "Applied N
+#      ops" counted the plan length, not successes.
 #
 # The LLM is asked for PLAIN JSON ops in the reply content (no native tool_calls),
 # so this works with OpenAI, local llama.cpp servers, and other compatible APIs.
+# v1.2.0: the system prompt now carries full Blender + bridge knowledge —
+# the exact op reference, phone guardrails, and two worked examples with real
+# values — so the model builds real plans instead of empty-param shapes.
 
 bl_info = {
     "name": "AI Chat",
     "author": "Muse (for anony)",
-    "version": (1, 1, 1),
+    "version": (1, 2, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > AI Chat",
     "description": "In-app AI chat panel: plain-language prompts become Blender ops",
@@ -57,23 +67,78 @@ ALLOWED_OPS = {
 }
 READONLY_OPS = {"get_scene_info", "get_object_info"}
 
-_BASE_SYSTEM_PROMPT = """You control Blender through structured ops. Reply with ONLY a JSON object:
+_BASE_SYSTEM_PROMPT = """You are the AI inside "Blender AI" — Blender 5.3.0 running on an Android phone.
+You drive Blender ONLY through the structured ops below. These are the exact ops
+of the AI Bridge built into this app (the same ops the phone's local socket
+bridge on 127.0.0.1:9876 and the MCP server expose). There is no other tool and
+no other way to touch the scene. Reply with ONLY a JSON object:
 {"ops": [{"op": "<name>", "params": {...}}, ...], "note": "<one short line>"}
-No markdown, no code fences, no extra text.
+No markdown, no code fences, no extra text, no apologies.
 
-Available ops (params as in the AI Bridge):
-- create_object: kind cube/sphere/cylinder/cone/torus/plane/monkey/light/camera, name, location [x,y,z]
-- set_transform: name, location [x,y,z], rotation_euler [rx,ry,rz] (radians), scale [x,y,z]
-- delete_object: name
-- create_material: name, color [r,g,b,a] 0..1, roughness, metallic, assign_to (object name)
-- add_modifier: name, modifier_type SUBSURF/BEVEL, levels (max 2), width
-- get_scene_info: {} — use first when you need to see the scene
-- get_object_info: name
-- render: filepath (omit for default), width, height (max 512 each), samples (max 32), engine WORKBENCH/EEVEE
-- save_blend: filepath (omit for default)
+RULES — every op MUST have complete, concrete params. Never emit "params": {}.
+Every create names the object; every transform/material/modifier names its
+target; every number is a real number, never a placeholder. If something cannot
+be done with these ops, say so in "note" and emit an empty ops list — never
+invent an op, a param, or an object name.
+- Names: use the exact names from the scene summary. Never invent an object
+  name that does not exist; call get_scene_info first when unsure. When you
+  create objects, give each a clear name and reuse THAT name in later steps
+  (create "WallNorth", then create_material assign_to "WallNorth").
+- Space: metres, Z is up, rotation_euler is in RADIANS, scale is a multiplier.
+  A default cube is 2m on a side, centred at its location. "size" is NOT a
+  param — size comes from set_transform scale.
+- Build in order: create parts first, then materials, then transforms. Keep
+  the plan small and complete: usually 2-8 ops, one object per op.
+
+OPS (exact params — defaults in brackets):
+- get_scene_info: {} — lists every object (name, type, location) + scene totals.
+  Use it first when the request refers to something already in the scene.
+- get_object_info: name (required).
+- create_object: kind cube/sphere/cylinder/cone/torus/plane/monkey/light/camera
+  [cube], name, location [x,y,z] [0,0,0]. A cone's point is up; a cylinder's
+  axis is Z. Light adds a point light; camera adds a camera.
+- set_transform: name (required), location [x,y,z], rotation_euler [rx,ry,rz]
+  in radians, scale [x,y,z]. Only the fields you give change; the rest stay.
+- delete_object: name (required).
+- create_material: name, color [r,g,b,a] each 0..1, roughness 0..1, metallic
+  0..1, assign_to (object name). Without assign_to the material is created
+  but sits unused on nothing — ALWAYS set assign_to.
+- add_modifier: name (required), modifier_type SUBSURF/BEVEL, levels (max 2),
+  width (bevel, in metres).
+- render: filepath (omit for the default), width/height (max 512 each),
+  samples (max 32), engine WORKBENCH/EEVEE/EEVEE_NEXT/CYCLES. Default engine
+  is WORKBENCH — always use it on this phone unless the user asks for another.
+  Cycles is NOT in this Lite build.
+- save_blend: filepath (omit for the default).
 {CODE_LINE}
-Rules: keep ops minimal (usually 1-4). Never invent object names that do not exist;
-call get_scene_info first if unsure. Locations are in metres, Z is up.
+
+PHONE LIMITS — hard caps, never exceed them or the op is refused:
+- Scene totals: 200,000 polygons, 300,000 vertices. Keep scenes light; prefer
+  a few big simple parts over many small ones.
+- SUBSURF levels max 2. Render max 512x512, max 32 samples.
+- One plan: max 50 ops. execute_code: max 100,000 chars, and the scene is
+  auto-saved before it runs.
+- Files: never use /tmp — on Android it fails. Omit filepath and the app uses
+  Download/Blender.
+
+EXAMPLE 1 — "make a simple house with walls and roof" (copy this shape):
+{"ops": [
+  {"op": "create_object", "params": {"kind": "cube", "name": "HouseBase", "location": [0, 0, 1]}},
+  {"op": "set_transform", "params": {"name": "HouseBase", "scale": [3, 2.5, 1]}},
+  {"op": "create_object", "params": {"kind": "cone", "name": "HouseRoof", "location": [0, 0, 3.2]}},
+  {"op": "set_transform", "params": {"name": "HouseRoof", "scale": [2.6, 2.2, 1.2]}},
+  {"op": "create_material", "params": {"name": "WallMat", "color": [0.85, 0.7, 0.5, 1.0], "roughness": 0.9, "assign_to": "HouseBase"}},
+  {"op": "create_material", "params": {"name": "RoofMat", "color": [0.6, 0.15, 0.1, 1.0], "roughness": 0.8, "assign_to": "HouseRoof"}}
+], "note": "Made a simple house: brick base with a cone roof."}
+
+EXAMPLE 2 — "make a wooden table" (one leg shown; add 3 more the same way):
+{"ops": [
+  {"op": "create_object", "params": {"kind": "cube", "name": "TableTop", "location": [0, 0, 0.75]}},
+  {"op": "set_transform", "params": {"name": "TableTop", "scale": [1.1, 0.7, 0.05]}},
+  {"op": "create_object", "params": {"kind": "cylinder", "name": "TableLeg1", "location": [-0.9, -0.55, 0.35]}},
+  {"op": "set_transform", "params": {"name": "TableLeg1", "scale": [0.05, 0.05, 0.35]}},
+  {"op": "create_material", "params": {"name": "WoodMat", "color": [0.55, 0.35, 0.2, 1.0], "roughness": 0.7, "assign_to": "TableTop"}}
+], "note": "Made a wooden table top with one leg; copy TableLeg1 three more times for the other corners."}
 """
 
 
@@ -130,8 +195,19 @@ def _dispatch(op, params):
 def _validate_plan(ops, allow_code):
     """Dry-run validation: op names known, params sane, targets exist.
     Sequential-aware: objects created by an earlier step count as existing
-    for later steps (a plan that creates a cube then materials it is valid)."""
+    for later steps (a plan that creates a cube then materials it is valid).
+    v1.2.0: also rejects HOLLOW plans — an op with no usable params (e.g.
+    create_object({})) is a plan error, not something to "apply"."""
     errors = []
+    if not ops:
+        return ["plan has no ops"]
+    # Required params. need_any: at least one of the listed must be present
+    # and non-empty. need_all: every listed param must be present.
+    need_any = {"create_object": ("kind", "name", "location"),
+                "create_material": ("name", "color", "assign_to")}
+    need_all = {"set_transform": ("name",), "delete_object": ("name",),
+                "add_modifier": ("name",), "get_object_info": ("name",),
+                "execute_code": ("code",)}
     known = set(bpy.data.objects.keys())
     for i, step in enumerate(ops):
         op = step.get("op")
@@ -142,6 +218,12 @@ def _validate_plan(ops, allow_code):
         if op not in ALLOWED_OPS and op != "execute_code":
             errors.append("step %d: unknown op %r" % (i, op))
             continue
+        if op in need_any and not any(params.get(k) for k in need_any[op]):
+            errors.append("step %d: %s has no usable params — give %s" %
+                          (i, op, " or ".join(need_any[op])))
+        for k in need_all.get(op, ()):
+            if not params.get(k):
+                errors.append("step %d: %s needs %r" % (i, op, k))
         if op == "create_object" and params.get("name"):
             known.add(params["name"])
         if op == "delete_object":
@@ -179,6 +261,22 @@ def _apply_plan(ops, dry_run, allow_code):
             results.append({"status": "error", "message": "stopped at failed op"})
             break
     return results, []
+
+
+def _apply_summary(results, total):
+    """Honest Apply report: (ok_count, fail_reason). _apply_plan stops at the
+    first failed op and appends a 'stopped at failed op' marker, so the first
+    non-ok result carrying a 'code' is the real failure (v1.2.0)."""
+    ok = 0
+    fail = ""
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        if r.get("status") == "ok":
+            ok += 1
+        elif "code" in r and not fail:
+            fail = str(r.get("message") or r.get("code"))[:160]
+    return ok, fail
 
 
 # ---------------------------------------------------------------- LLM client (pure stdlib; WORKER THREAD ONLY)
@@ -323,11 +421,13 @@ def _deliver_pending():
         if errors:
             _history_add("PLAN BLOCKED: " + "; ".join(errors))
             return None
-        ok = all(r.get("status") == "ok" for r in results if isinstance(r, dict))
+        ok_count, fail = _apply_summary(results, len(ops))
+        ok = ok_count == len(ops)
         _history_add("APPLIED: " + plan_text)
         if p["note"]:
             _history_add("AI: " + p["note"])
-        _history_add("Applied %d ops (%s)." % (len(ops), "ok" if ok else "with errors"))
+        _history_add("Applied %d of %d ops%s." %
+                     (ok_count, len(ops), (" — stopped: " + fail) if fail else ""))
     return None
 
 
@@ -418,12 +518,15 @@ class AICHAT_OT_apply(Operator):
             _history_add("PLAN BLOCKED: " + "; ".join(errors))
             self.report({"ERROR"}, "Plan blocked: " + "; ".join(errors)[:200])
             return {"CANCELLED"}
-        ok = all(r.get("status") == "ok" for r in results if isinstance(r, dict))
+        ok_count, fail = _apply_summary(results, len(ops))
+        ok = ok_count == len(ops)
         plan_text = " | ".join("%s(%s)" % (s.get("op"), json.dumps(s.get("params") or {})) for s in ops)
         _history_add("APPLIED (stored plan): " + plan_text)
+        _history_add("Applied %d of %d ops%s." %
+                     (ok_count, len(ops), (" — stopped: " + fail) if fail else ""))
         props.pending_plan_json = ""
         props.pending_note = ""
-        self.report({"INFO" if ok else "WARNING"}, "Applied %d ops" % len(ops))
+        self.report({"INFO" if ok else "WARNING"}, "Applied %d of %d ops" % (ok_count, len(ops)))
         return {"FINISHED"}
 
 
