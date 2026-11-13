@@ -292,7 +292,7 @@ echo "[apk] compiling BlenderActivity"
 mkdir -p "$STAGE/javac" "$STAGE/dex"
 "$JAVA_HOME/bin/javac" -classpath "$ANDROID_JAR" -source 17 -target 17 \
   -d "$STAGE/javac" \
-  "$SCRIPT_DIR/app/src/main/java/org/blender/blender/BlenderActivity.java"
+  "$SCRIPT_DIR/app/src/main/java/com/skcena/blender/BlenderActivity.java"
 "$BT/d8" --min-api "$ANDROID_API" --output "$STAGE/dex" \
   $(find "$STAGE/javac" -name '*.class')
 
