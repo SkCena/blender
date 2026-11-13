@@ -19,7 +19,7 @@
 # NOTE 3: startup scripts run BEFORE addon_utils._initialize_once() appends
 # the add-on dirs to sys.path, so the modules are not importable yet at this
 # point. Bootstrap sys.path here first (same layout as addon_utils.paths()).
-"""Enable bundled AI add-ons (ai_bridge, ai_chat_panel) at startup."""
+"""Enable bundled AI add-ons (ai_bridge, ai_chat_panel, touch_sidebar) at startup."""
 
 import os
 import sys
@@ -50,7 +50,7 @@ def _ensure_addon_enabled(module_name):
 
 def _enable_all():
     _ensure_addon_paths()
-    for _module in ("ai_bridge", "ai_chat_panel"):
+    for _module in ("ai_bridge", "ai_chat_panel", "touch_sidebar"):
         _ensure_addon_enabled(_module)
 
 

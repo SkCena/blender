@@ -21,7 +21,12 @@
 bl_info = {
     "name": "AI Bridge",
     "author": "Muse (for anony)",
-    "version": (1, 1, 1),  # 1.1.1: bind on main thread under a lock (startup double-enable race)
+    "version": (1, 1, 2),  # 1.1.1: bind on main thread under a lock (startup double-enable race)
+    # 1.1.2: "Copy token" operator (NR4 touch pass — the token label is not
+    # copyable and stays truncated "..."; the operator copies it to the
+    # clipboard instead). On-phone clipboard sync is UNVERIFIED — the
+    # operator sets window_manager.clipboard; whether the Android port
+    # forwards that to the system clipboard is a phone test, not assumed.
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > AI Bridge",
     "description": "Local token-auth JSON bridge (127.0.0.1:9876) so an AI agent can drive Blender",
@@ -680,6 +685,26 @@ class AIBRIDGE_OT_stop(Operator):
         return {"FINISHED"}
 
 
+class AIBRIDGE_OT_copy_token(Operator):
+    bl_idname = "ai_bridge.copy_token"
+    bl_label = "Copy token"
+    bl_description = "Copy the bridge token to the system clipboard (the token label above is not copyable)"
+
+    def execute(self, context):
+        tok = get_cached_token()
+        if not tok:
+            try:
+                tok = context.preferences.addons[ADDON_NAME].preferences.token
+            except Exception:
+                tok = ""
+        if not tok or tok == "change-me":
+            self.report({"WARNING"}, "No token to copy yet — start the bridge first")
+            return {"CANCELLED"}
+        context.window_manager.clipboard = tok
+        self.report({"INFO"}, "Bridge token copied to clipboard")
+        return {"FINISHED"}
+
+
 class AIBRIDGE_OT_regen_token(Operator):
     bl_idname = "ai_bridge.regenerate_token"
     bl_label = "Regenerate token"
@@ -719,11 +744,12 @@ class AIBRIDGE_PT_panel(Panel):
             layout.label(text="Token: not started yet")
         layout.operator("ai_bridge.start_server")
         layout.operator("ai_bridge.stop_server")
+        layout.operator("ai_bridge.copy_token")
         layout.operator("ai_bridge.regenerate_token")
 
 
 _classes = (AIBridgePreferences, AIBRIDGE_OT_start, AIBRIDGE_OT_stop,
-            AIBRIDGE_OT_regen_token, AIBRIDGE_PT_panel)
+            AIBRIDGE_OT_copy_token, AIBRIDGE_OT_regen_token, AIBRIDGE_PT_panel)
 
 
 def _on_load_post(_dummy):

@@ -1,4 +1,12 @@
-# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.2.0
+# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.3.0
+# (v1.2.0 header notes retained below; v1.3.0 = NR4 touch pass, 2026-11-13:
+#  Send/Apply buttons 1.6x -> 2.0x tall, history rendered in a box for
+#  readability, and one-tap quick actions (Add Cube / Add Light / Render /
+#  Save) that call the bridge directly with no LLM call.
+#  Honest limit on the history text: Blender's Python UI exposes NO per-label
+#  font size, so the text cannot be made bigger from an add-on — the box +
+#  spacing is the closest real improvement; genuinely larger text needs the
+#  global UI Scale / Resolution Scale (NR3), not a panel change.)
 # N-panel "AI Chat": type a prompt, the panel calls an OpenAI-compatible API
 # (pure stdlib urllib — no requests, no pip), gets back structured ops, and
 # applies them through ai_bridge's command dispatcher (same code the socket
@@ -37,7 +45,7 @@
 bl_info = {
     "name": "AI Chat",
     "author": "Muse (for anony)",
-    "version": (1, 2, 0),
+    "version": (1, 3, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > AI Chat",
     "description": "In-app AI chat panel: plain-language prompts become Blender ops",
@@ -464,6 +472,68 @@ class AIChatProperties(bpy.types.PropertyGroup):
     pending_note: StringProperty(name="Pending note", default="")
 
 
+def _quick(op, params, label):
+    """One-tap quick action: run a bridge op directly (no LLM call) and
+    return (ok, short message) for the operator to report + log."""
+    r = _dispatch(op, params)
+    if isinstance(r, dict) and r.get("status") == "ok":
+        res = r.get("result") or {}
+        detail = res.get("filepath") or res.get("name") or ""
+        return True, "%s: ok%s" % (label, (" — " + str(detail)) if detail else "")
+    msg = ""
+    if isinstance(r, dict):
+        msg = str(r.get("message") or r.get("code") or r)
+    return False, "%s failed: %s" % (label, msg[:160])
+
+
+class AICHAT_OT_quick_cube(Operator):
+    bl_idname = "ai_chat.quick_cube"
+    bl_label = "Add Cube"
+    bl_description = "Add a cube at the origin (no AI call)"
+
+    def execute(self, context):
+        ok, msg = _quick("create_object", {"kind": "cube", "location": [0, 0, 1]}, "Add Cube")
+        _history_add("Quick: " + msg)
+        self.report({"INFO" if ok else "WARNING"}, msg)
+        return {"FINISHED"} if ok else {"CANCELLED"}
+
+
+class AICHAT_OT_quick_light(Operator):
+    bl_idname = "ai_chat.quick_light"
+    bl_label = "Add Light"
+    bl_description = "Add a point light above the scene (no AI call)"
+
+    def execute(self, context):
+        ok, msg = _quick("create_object", {"kind": "light", "location": [2, 2, 4]}, "Add Light")
+        _history_add("Quick: " + msg)
+        self.report({"INFO" if ok else "WARNING"}, msg)
+        return {"FINISHED"} if ok else {"CANCELLED"}
+
+
+class AICHAT_OT_quick_render(Operator):
+    bl_idname = "ai_chat.quick_render"
+    bl_label = "Render"
+    bl_description = "Render with the default engine (Workbench, 256x256) to Download/Blender (no AI call)"
+
+    def execute(self, context):
+        ok, msg = _quick("render", {}, "Render")
+        _history_add("Quick: " + msg)
+        self.report({"INFO" if ok else "WARNING"}, msg)
+        return {"FINISHED"} if ok else {"CANCELLED"}
+
+
+class AICHAT_OT_quick_save(Operator):
+    bl_idname = "ai_chat.quick_save"
+    bl_label = "Save"
+    bl_description = "Save the .blend file to the default location (no AI call)"
+
+    def execute(self, context):
+        ok, msg = _quick("save_blend", {}, "Save")
+        _history_add("Quick: " + msg)
+        self.report({"INFO" if ok else "WARNING"}, msg)
+        return {"FINISHED"} if ok else {"CANCELLED"}
+
+
 class AICHAT_OT_send(Operator):
     bl_idname = "ai_chat.send"
     bl_label = "Send to AI"
@@ -548,11 +618,11 @@ class AICHAT_PT_panel(Panel):
             layout.label(text="WARNING: AI may run any Python.")
             layout.label(text="Save your scene first.")
         row = layout.row()
-        row.scale_y = 1.6
+        row.scale_y = 2.0
         row.operator("ai_chat.send", text="Send to AI")
         if (props.pending_plan_json or "").strip():
             row2 = layout.row()
-            row2.scale_y = 1.6
+            row2.scale_y = 2.0
             row2.operator("ai_chat.apply_plan", text="Apply stored plan")
             for line in _wrap("Plan: " + props.pending_plan_json, 44):
                 layout.label(text=line)
@@ -560,15 +630,29 @@ class AICHAT_PT_panel(Panel):
                 for line in _wrap("AI: " + props.pending_note, 44):
                     layout.label(text=line)
         layout.separator()
+        layout.label(text="Quick actions (no AI call):")
+        qrow1 = layout.row(align=True)
+        qrow1.scale_y = 1.6
+        qrow1.operator("ai_chat.quick_cube", text="Add Cube")
+        qrow1.operator("ai_chat.quick_light", text="Add Light")
+        qrow2 = layout.row(align=True)
+        qrow2.scale_y = 1.6
+        qrow2.operator("ai_chat.quick_render", text="Render")
+        qrow2.operator("ai_chat.quick_save", text="Save")
+        layout.separator()
+        # History in a box: Blender's Python UI has no per-label font size,
+        # so grouping + spacing is the real readability win available here.
         layout.label(text="History (latest last):")
+        box = layout.box()
         for raw in (props.history or "").split("\n")[-8:]:
             for line in _wrap(raw, 44):
                 if line.strip():
-                    layout.label(text=line)
+                    box.label(text=line)
 
 
 _classes = (AIChatPreferences, AIChatProperties, AICHAT_OT_send,
-            AICHAT_OT_apply, AICHAT_PT_panel)
+            AICHAT_OT_apply, AICHAT_OT_quick_cube, AICHAT_OT_quick_light,
+            AICHAT_OT_quick_render, AICHAT_OT_quick_save, AICHAT_PT_panel)
 
 
 def register():
