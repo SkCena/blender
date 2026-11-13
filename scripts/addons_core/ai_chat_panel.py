@@ -1,4 +1,4 @@
-# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.1.0
+# ai_chat_panel.py — In-app AI chat panel for Blender on Android (and desktop) v1.1.1
 # N-panel "AI Chat": type a prompt, the panel calls an OpenAI-compatible API
 # (pure stdlib urllib — no requests, no pip), gets back structured ops, and
 # applies them through ai_bridge's command dispatcher (same code the socket
@@ -27,7 +27,7 @@
 bl_info = {
     "name": "AI Chat",
     "author": "Muse (for anony)",
-    "version": (1, 1, 0),
+    "version": (1, 1, 1),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > AI Chat",
     "description": "In-app AI chat panel: plain-language prompts become Blender ops",
@@ -188,7 +188,7 @@ def _chat_completions(snap, messages):
         "model": snap["model"],
         "messages": messages,
         "temperature": 0.2,
-        "max_tokens": 1500,
+        "max_tokens": 4000,
     }).encode()
     req = urllib.request.Request(url, data=body, headers={
         "Content-Type": "application/json",
@@ -205,13 +205,36 @@ def _chat_completions(snap, messages):
         raise RuntimeError("LLM request failed: %s" % e)
 
 
+def _extract_json_block(content):
+    """Pull the JSON object out of a model reply that may carry prose or
+    markdown fences around it. Returns the candidate string, or "".
+    v1.1.1: the old code only stripped a leading fence, so a reply like
+    "Here is the plan: ```json {...} ``` Hope this helps!" died in
+    json.loads with a bare "Expecting value" error (seen on the phone
+    2026-11-13, second "make an simple house" send)."""
+    text = (content or "").strip()
+    if not text:
+        return ""
+    # Drop markdown fence lines (``` or ```json), line by line.
+    lines = [ln for ln in text.split("\n") if ln.strip() not in ("```", "```json")]
+    text = "\n".join(lines).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        return text[start:end + 1]
+    return text
+
+
 def _parse_plan(content):
-    content = (content or "").strip()
-    if content.startswith("```"):
-        content = content.strip("`").strip()
-        if content.lower().startswith("json"):
-            content = content[4:].strip()
-    plan = json.loads(content)
+    candidate = _extract_json_block(content)
+    try:
+        plan = json.loads(candidate)
+    except Exception as e:
+        raise RuntimeError(
+            "LLM plan was not JSON (%s). Model said (first 300 chars): %s"
+            % (e, (content or "")[:300]))
+    if not isinstance(plan, dict):
+        raise RuntimeError("LLM plan was not a JSON object")
     ops = plan.get("ops") or []
     if not isinstance(ops, list):
         raise RuntimeError("LLM 'ops' was not a list")
