@@ -274,7 +274,7 @@ static GHOST_SystemAndroid *android_system_if_ready()
 }
 
 /* Soft-keyboard text/keys from the Java InputConnection (BlenderActivity). */
-extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativeOnCommitText(
+extern "C" JNIEXPORT void JNICALL Java_com_skcena_blender_BlenderActivity_nativeOnCommitText(
     JNIEnv *env, jobject /*thiz*/, jstring text)
 {
   GHOST_SystemAndroid *system = android_system_if_ready();
@@ -289,7 +289,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativ
 /* Called before the native activity starts, so the path is known by the time
  * the log is opened. The activity picks it because it can test what storage is
  * actually granted, and it tells the user where the file went. */
-extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativeSetLogPath(
+extern "C" JNIEXPORT void JNICALL Java_com_skcena_blender_BlenderActivity_nativeSetLogPath(
     JNIEnv *env, jobject /*thiz*/, jstring path)
 {
   if (path == nullptr) {
@@ -300,7 +300,7 @@ extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativ
   env->ReleaseStringUTFChars(path, utf);
 }
 
-extern "C" JNIEXPORT void JNICALL Java_org_blender_blender_BlenderActivity_nativeOnKey(
+extern "C" JNIEXPORT void JNICALL Java_com_skcena_blender_BlenderActivity_nativeOnKey(
     JNIEnv * /*env*/, jobject /*thiz*/, jint keycode, jint action, jint meta_state)
 {
   if (GHOST_SystemAndroid *system = android_system_if_ready()) {
