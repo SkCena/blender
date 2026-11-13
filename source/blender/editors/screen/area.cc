@@ -189,7 +189,7 @@ static void area_draw_azone(ScrArea *area, ARegion *region, AZone *az)
  */
 static void draw_azone_arrow(float x1, float y1, float x2, float y2, AZEdge edge)
 {
-  const float size = 0.2f * U.widget_unit;
+  const float size = 0.35f * U.widget_unit; /* N1: bigger arrow for the finger-sized tab. */
   const float l = 1.0f;  /* arrow length */
   const float s = 0.25f; /* arrow thickness */
   const float hl = l / 2.0f;
@@ -226,7 +226,7 @@ static void draw_azone_arrow(float x1, float y1, float x2, float y2, AZEdge edge
 
   GPU_blend(GPU_BLEND_ALPHA);
   immBindBuiltinProgram(GPU_SHADER_3D_UNIFORM_COLOR);
-  immUniformColor4f(0.8f, 0.8f, 0.8f, 0.4f);
+  immUniformColor4f(0.8f, 0.8f, 0.8f, 0.9f); /* N1: nearly opaque arrow. */
 
   immBegin(GPU_PRIM_TRI_FAN, 6);
   for (int i = 0; i < 6; i++) {
@@ -264,7 +264,8 @@ static void region_draw_azone_tab_arrow(ScrArea *area, ARegion *region, AZone *a
   }
 
   /* Workaround for different color spaces between normal areas and the ones using GPUViewports. */
-  float alpha = WM_region_use_viewport(area, region) ? 0.6f : 0.4f;
+  /* N1: nearly opaque so the finger-sized tab is actually visible. */
+  float alpha = WM_region_use_viewport(area, region) ? 0.9f : 0.85f;
   const float color[4] = {0.05f, 0.05f, 0.05f, alpha};
   rctf rect{};
   /* Hit size is a bit larger than visible background. */
@@ -1299,12 +1300,21 @@ static void region_azone_tab_plus(ScrArea *area, AZone *az, ARegion *region)
       az->x2 = region->winrct.xmin + U.pixelsize;
       az->y2 = region->winrct.ymax - (edge_offset * tab_size_x);
       break;
-    case AE_RIGHT_TO_TOPLEFT:
-      az->x1 = region->winrct.xmax - U.pixelsize;
-      az->y1 = region->winrct.ymax - ((edge_offset + 1.0f) * tab_size_x);
-      az->x2 = region->winrct.xmax + tab_size_y;
-      az->y2 = region->winrct.ymax - (edge_offset * tab_size_x);
+    case AE_RIGHT_TO_TOPLEFT: {
+      /* N1 (Android touch): wide, fully on-screen, vertically centred sidebar tab.
+       * Was: a ~1px sliver on-screen (the rest hung off the screen edge), pinned
+       * near the top — untappable by finger (~60x narrower than the 48dp minimum).
+       * 2.5 * widget_unit is ~110px at wu 44. Centred on the area: the hidden
+       * region's own rect is not a reliable vertical reference while hidden. */
+      const float tab_w = 2.5f * U.widget_unit;
+      const float tab_h = 1.0f * U.widget_unit;
+      const int mid_y = (area->totrct.ymin + area->totrct.ymax) / 2;
+      az->x1 = area->totrct.xmax - tab_w;
+      az->y1 = mid_y - tab_h / 2.0f;
+      az->x2 = area->totrct.xmax;
+      az->y2 = mid_y + tab_h / 2.0f;
       break;
+    }
   }
   /* rect needed for mouse pointer test */
   BLI_rcti_init(&az->rect, az->x1, az->x2, az->y1, az->y2);
